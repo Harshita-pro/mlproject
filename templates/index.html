@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Identifier 💊</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>💊 Medicine Identifier</h1>
+            <p class="subtitle">Upload a photo of medicine strip/box to identify it instantly</p>
+        </div>
+
+        <!-- Main Content -->
+        <div class="content">
+            <!-- Upload Section -->
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📷</div>
+                    <p class="upload-text">Click to upload or drag & drop</p>
+                    <p class="upload-hint">PNG, JPG, JPEG, BMP or GIF (max 10MB)</p>
+                    <input 
+                        type="file" 
+                        id="imageInput" 
+                        accept="image/*"
+                        hidden
+                    >
+                </div>
+
+                <!-- Image Preview -->
+                <div class="preview-section" id="previewSection" style="display: none;">
+                    <img id="imagePreview" src="" alt="Preview">
+                    <button class="btn-remove" id="removeBtn" onclick="clearUpload()">✕ Change</button>
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <button class="btn-primary" id="identifyBtn" onclick="predict()" disabled>
+                🔍 Identify Medicine
+            </button>
+
+            <!-- Loading Spinner -->
+            <div class="loading" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>⏳ Analyzing image...</p>
+            </div>
+
+            <!-- Results Section -->
+            <div class="result-section" id="resultSection" style="display: none;"></div>
+
+            <!-- Error Section -->
+            <div class="error-section" id="errorSection" style="display: none;"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p class="tips-title">💡 Tips for best results:</p>
+            <ul class="tips-list">
+                <li>Capture the composition part clearly</li>
+                <li>Take photo in good lighting</li>
+                <li>Hold camera straight without angle</li>
+                <li>Ensure text is readable</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
