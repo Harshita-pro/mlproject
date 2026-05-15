@@ -1,12 +1,4 @@
-Flask==2.3.0
-Werkzeug==2.3.0
-easyocr==1.7.0
-opencv-python-headless==4.8.0.74
-faiss-cpu==1.13.0
-sentence-transformers==2.2.2
-pandas==2.2.2
-numpy==1.26.4
-Pillow==10.0.0
-python-dotenv==1.0.0
 streamlit
-setuptools
+pandas
+numpy
+opencv-python-headless
