@@ -1,4 +1,8 @@
 streamlit
+easyocr==1.7.0
+opencv-python-headless
+faiss-cpu
+sentence-transformers
 pandas
 numpy
-opencv-python-headless
+Pillow
