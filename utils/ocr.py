@@ -56,37 +56,35 @@ OCR_CORRECTIONS = {
 def preprocess_image(image_path):
     """
     Preprocess image for better OCR accuracy.
-    
-    Steps:
-    - Load image
-    - Convert to grayscale
-    - Apply denoising
-    - Enhance contrast
-    - Sharpen
     """
     try:
         img = cv2.imread(image_path)
+
         if img is None:
             logger.warning(f"Failed to load image: {image_path}")
             return None
-        
+
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
+
         # Denoise
         denoised = cv2.fastNlMeansDenoising(gray, h=10)
-        
-        # Enhance contrast using CLAHE
+
+        # Enhance contrast
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced = clahe.apply(denoised)
-        
+
         # Sharpen
-        kernel = np.array([[-1, -1, -1],
-                          [-1,  9, -1],
-                          [-1, -1, -1]]) / 1.0
+        kernel = np.array([
+            [-1, -1, -1],
+            [-1,  9, -1],
+            [-1, -1, -1]
+        ])
+
         sharpened = cv2.filter2D(enhanced, -1, kernel)
-        
+
         return sharpened
+
     except Exception as e:
         logger.error(f"Image preprocessing failed: {str(e)}")
         return None
@@ -94,88 +92,88 @@ def preprocess_image(image_path):
 
 def clean_text(text):
     """
-    Clean and standardize OCR extracted text.
-    
-    - Fix common OCR mistakes
-    - Normalize spacing
-    - Remove special characters (except dosage units)
+    Clean OCR text.
     """
+
     text_lower = text.lower()
-    
+
     # Apply OCR corrections
     for wrong, right in OCR_CORRECTIONS.items():
         text_lower = text_lower.replace(wrong, right)
-    
-    # Keep alphanumeric, spaces, +, (), /, %, dosage units
+
+    # Keep useful characters only
     text_lower = re.sub(r'[^a-z0-9\s\+\(\)/\%\-]', ' ', text_lower)
-    
-    # Normalize multiple spaces
+
+    # Remove isolated single chars
+    text_lower = re.sub(r'\b[a-z]\b', ' ', text_lower)
+
+    # Normalize dosage spacing
+    text_lower = re.sub(r'(\d+)\s*mg', r'\1mg', text_lower)
+
+    # Normalize spaces
     text_lower = re.sub(r'\s+', ' ', text_lower)
-    
+
     return text_lower.strip()
 
 
 def extract_text_from_image(image_path):
     """
     Extract text from medicine image using OCR.
-    
-    Process:
-    1. Preprocess image for clarity
-    2. Run EasyOCR
-    3. Filter by confidence threshold
-    4. Clean and standardize text
-    5. Apply brand mapping
-    
-    Args:
-        image_path (str): Path to image file
-        
-    Returns:
-        str: Extracted and cleaned text
     """
+
     if reader is None:
         logger.error("EasyOCR reader not initialized")
         return ""
-    
+
     try:
+
         # Preprocess image
         preprocessed = preprocess_image(image_path)
+
         if preprocessed is None:
-            # Fallback: use original image
             results = reader.readtext(image_path)
+
         else:
-            # Use preprocessed image - save temporarily
-            temp_path = image_path.replace('.', '_temp.')
+            temp_path = "temp_processed.jpg"
+
             cv2.imwrite(temp_path, preprocessed)
+
             results = reader.readtext(temp_path)
-            # Clean up temp file
+
             Path(temp_path).unlink(missing_ok=True)
-        
-        # Extract text with confidence > 0.3
+
+        # Extract text
         text_parts = []
+
         for (bbox, text, confidence) in results:
-            if confidence > 0.3:
+
+            if confidence > 0.15:
                 text_parts.append(text)
-        
-        full_text = ' '.join(text_parts)
-        logger.info(f"Raw OCR extracted: {full_text[:100]}...")
-        
-        # Clean extracted text
+
+        full_text = " ".join(text_parts)
+
+        logger.info(f"Raw OCR extracted: {full_text[:100]}")
+
+        # Clean text
         full_text = clean_text(full_text)
-        logger.info(f"Cleaned text: {full_text[:100]}...")
-        
-        # Apply brand mapping
-        text_lower = full_text.lower()
+
+        logger.info(f"Cleaned text: {full_text[:100]}")
+
+        # Brand mapping
         extra_compositions = []
+
         for brand, composition in BRAND_MAP.items():
-            if brand in text_lower and composition:
+
+            if brand in full_text:
                 extra_compositions.append(composition)
-        
+
         if extra_compositions:
-            full_text = full_text + ' ' + ' '.join(extra_compositions)
-            logger.info(f"After brand mapping: {full_text[:100]}...")
-        
+            full_text += " " + " ".join(extra_compositions)
+
+        logger.info(f"Final OCR text: {full_text[:100]}")
+
         return full_text.strip()
-        
+
     except Exception as e:
         logger.error(f"OCR extraction failed: {str(e)}", exc_info=True)
         return ""

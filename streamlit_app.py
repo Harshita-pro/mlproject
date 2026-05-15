@@ -8,28 +8,44 @@ st.set_page_config(page_title="Medicine Identifier", layout="centered")
 st.title("💊 Medicine Identifier AI App")
 st.write("Upload medicine image to detect name, composition, uses")
 
-uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader(
+    "Upload Image",
+    type=["png", "jpg", "jpeg"]
+)
 
 if uploaded_file is not None:
+
     image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_container_width=True)
+
+    st.image(
+        image,
+        caption="Uploaded Image",
+        use_container_width=True
+    )
 
     with st.spinner("Processing image..."):
-        # save temporarily
+
+        # Save temp image
         temp_path = "temp_image.jpg"
+
         image = image.convert("RGB")
+
         image.save(temp_path)
 
         # OCR
         extracted_text = extract_text_from_image(temp_path)
 
+        # DEBUG
+        st.write("OCR TEXT:", extracted_text)
+
         st.subheader("📄 Extracted Text")
         st.write(extracted_text)
 
-        # Matching
+        # Find medicine
         result = find_medicine(extracted_text)
 
         if result:
+
             st.success("Medicine Found!")
 
             st.write("### 💊 Name:", result["medicine_name"])
@@ -38,5 +54,6 @@ if uploaded_file is not None:
             st.write("### ⚠️ Side Effects:", result["side_effects"])
             st.write("### 🏭 Manufacturer:", result["manufacturer"])
             st.write("### 🎯 Confidence:", result["confidence"])
+
         else:
             st.error("Medicine not found in database")
