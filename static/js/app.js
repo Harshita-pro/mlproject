@@ -110,7 +110,7 @@ async function predict() {
         if (data.success) {
             displayResult(data);
         } else {
-            showError(data.message, data.extracted_text);
+            showError(data.message, data.extracted_text || 'No text could be extracted from the image.');
         }
     } catch (error) {
         loading.style.display = 'none';
@@ -158,6 +158,16 @@ function displayResult(data) {
         </div>
 
         <div class="result-item">
+            <div class="result-label">Match Mode</div>
+            <div class="result-value">${escapeHtml(data.match_mode || 'direct')}</div>
+        </div>
+
+        <div class="result-item">
+            <div class="result-label">Semantic Search</div>
+            <div class="result-value">${escapeHtml(data.semantic_search_available === false ? 'No' : 'Yes')}</div>
+        </div>
+
+        <div class="result-item">
             <div class="result-label">Confidence Score</div>
             <div class="result-value">
                 <span class="confidence-badge ${confidenceClass}">
@@ -184,15 +194,15 @@ function showError(message, extractedText = null) {
         <h2>⚠️ ${message}</h2>
     `;
 
-    if (extractedText) {
-        errorHTML += `
-            <p><strong>Extracted text:</strong></p>
-            <div class="extracted-text">${escapeHtml(extractedText)}</div>
-            <p style="margin-top: 12px; font-size: 13px;">
-                If you see the extracted text above, you can manually search for the medicine in your database.
-            </p>
-        `;
-    }
+    const displayedText = extractedText || 'No text could be extracted from the image.';
+
+    errorHTML += `
+        <p><strong>Extracted text:</strong></p>
+        <div class="extracted-text">${escapeHtml(displayedText)}</div>
+        <p style="margin-top: 12px; font-size: 13px;">
+            This text is what the app used to search the medicine database.
+        </p>
+    `;
 
     errorHTML += `
         <p style="margin-top: 15px; font-size: 13px;"><strong>Try again with:</strong></p>

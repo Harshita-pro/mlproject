@@ -108,7 +108,8 @@ def predict():
             return jsonify({
                 'success': False,
                 'extracted_text': extracted_text,
-                'message': message
+                'message': message,
+                'semantic_search_available': SEMANTIC_AVAILABLE,
             }), 404
 
         logger.info(f"Medicine found: {result['medicine_name']}")
@@ -120,7 +121,9 @@ def predict():
             'uses': result['uses'],
             'side_effects': result['side_effects'],
             'manufacturer': result['manufacturer'],
-            'confidence': result['confidence']
+            'confidence': result['confidence'],
+            'match_mode': result.get('match_mode', 'direct'),
+            'semantic_search_available': result.get('semantic_search_available', SEMANTIC_AVAILABLE)
         })
 
     except Exception as exc:
