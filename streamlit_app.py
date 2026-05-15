@@ -17,6 +17,7 @@ if uploaded_file is not None:
     with st.spinner("Processing image..."):
         # save temporarily
         temp_path = "temp_image.jpg"
+        image = image.convert("RGB")
         image.save(temp_path)
 
         # OCR
