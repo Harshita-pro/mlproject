@@ -1,31 +1,109 @@
 import numpy as np
-import faiss
 import pandas as pd
-from sentence_transformers import SentenceTransformer
 import logging
 import re
+from difflib import SequenceMatcher
+from pathlib import Path
+
+try:
+    import faiss
+except ImportError:
+    faiss = None
+    logging.getLogger(__name__).warning(
+        "FAISS is not installed. Semantic search will be disabled."
+    )
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
+    logging.getLogger(__name__).warning(
+        "SentenceTransformers is not installed. Semantic search will be disabled."
+    )
 
 logger = logging.getLogger(__name__)
 
-# Load model and index on module import
-try:
-    logger.info("Loading sentence transformer model...")
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / 'data'
+CSV_PATH = DATA_DIR / 'Medicine_Details.csv'
+PICKLE_PATH = Path(__file__).resolve().parent / 'medicine_data.pkl'
+INDEX_PATH = Path(__file__).resolve().parent / 'medicine_index.faiss'
 
-    logger.info("Loading FAISS index...")
-    index = faiss.read_index('utils/medicine_index.faiss')
 
-    logger.info("Loading medicine database...")
-    df = pd.read_pickle('utils/medicine_data.pkl')
+def load_database():
+    """Load medicine database from disk, with a CSV fallback."""
+    if PICKLE_PATH.exists():
+        try:
+            logger.info(f"Loading medicine database from {PICKLE_PATH}...")
+            return pd.read_pickle(str(PICKLE_PATH))
+        except Exception as e:
+            logger.warning(f"Failed to load pickled database: {e}")
 
-    logger.info(f"✅ Models loaded successfully. Database has {len(df)} medicines.")
+    if CSV_PATH.exists():
+        try:
+            logger.info(f"Loading medicine database from fallback CSV {CSV_PATH}...")
+            return pd.read_csv(str(CSV_PATH))
+        except Exception as e:
+            logger.warning(f"Failed to load CSV fallback database: {e}")
 
-except Exception as e:
-    logger.error(f"Failed to load models: {str(e)}")
+    return None
 
-    model = None
-    index = None
-    df = None
+
+def load_faiss_index():
+    """Load FAISS index if it exists."""
+    if faiss is None:
+        return None
+
+    if INDEX_PATH.exists():
+        try:
+            logger.info(f"Loading FAISS index from {INDEX_PATH}...")
+            return faiss.read_index(str(INDEX_PATH))
+        except Exception as e:
+            logger.warning(f"Failed to load FAISS index: {e}")
+
+    return None
+
+
+def load_model():
+    """Load sentence transformer model if available."""
+    if SentenceTransformer is None:
+        logger.warning(
+            "SentenceTransformer library is unavailable. Semantic search will be skipped."
+        )
+        return None
+
+    try:
+        logger.info("Loading sentence transformer model...")
+        return SentenceTransformer('all-MiniLM-L6-v2')
+    except Exception as e:
+        logger.warning(f"Failed to load sentence transformer model: {e}")
+        return None
+
+
+model = load_model()
+index = load_faiss_index()
+df = load_database()
+
+SEMANTIC_AVAILABLE = (
+    faiss is not None and
+    SentenceTransformer is not None and
+    model is not None and
+    index is not None
+)
+
+if df is None:
+    logger.error(
+        "No medicine database loaded. Please run scripts/rag_ingest.py or place Medicine_Details.csv in data/."
+    )
+else:
+    df['Medicine Name'] = df.get('Medicine Name', '').fillna('')
+    df['Composition'] = df.get('Composition', '').fillna('')
+    df['Uses'] = df.get('Uses', '').fillna('')
+    df['Side_effects'] = df.get('Side_effects', 'N/A').fillna('N/A')
+    df['Manufacturer'] = df.get('Manufacturer', 'N/A').fillna('N/A')
+    logger.info(f"✅ Database loaded with {len(df)} medicines.")
+    if not SEMANTIC_AVAILABLE:
+        logger.warning("Semantic search is unavailable. Direct matching will still work.")
 
 
 def tokenize_text(text):
@@ -38,6 +116,16 @@ def tokenize_text(text):
     )
 
 
+def normalize_text(text):
+    return re.sub(r'[^a-z0-9\s]', ' ', text.lower()).strip()
+
+
+def calculate_fuzzy_similarity(a, b):
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
 def calculate_direct_match_score(
     extracted_text,
     composition,
@@ -48,27 +136,27 @@ def calculate_direct_match_score(
     """
 
     extracted_tokens = tokenize_text(extracted_text)
-
     composition_tokens = tokenize_text(str(composition))
-
     medicine_tokens = tokenize_text(str(medicine_name))
 
-    # Common words
-    composition_match = extracted_tokens & composition_tokens
+    target_tokens = composition_tokens | medicine_tokens
+    matched_tokens = extracted_tokens & target_tokens
 
-    medicine_match = extracted_tokens & medicine_tokens
-
-    match_count = len(composition_match)
-
-    # Bonus if medicine name matched
-    if len(medicine_match) > 0:
-        match_count += 2
+    name_match = len(extracted_tokens & medicine_tokens) > 0
+    composition_match = len(extracted_tokens & composition_tokens) > 0
+    match_count = len(matched_tokens)
 
     # Direct match threshold
     is_direct = match_count >= 1
 
-    # Confidence score
-    score = min(95, 50 + match_count * 15)
+    # Confidence score calculation
+    score = 45 + match_count * 18
+    if name_match:
+        score += 10
+    if composition_match and not name_match:
+        score += 5
+
+    score = min(100, score)
 
     return score, is_direct
 
@@ -110,16 +198,12 @@ def find_medicine(extracted_text, top_k=5):
     Find medicine from OCR extracted text.
     """
 
-    if model is None or index is None or df is None:
-
-        logger.error("Models not initialized")
-
+    if df is None:
+        logger.error("Medicine database not loaded")
         return None
 
     if not extracted_text or len(extracted_text.strip()) < 2:
-
         logger.warning("Extracted text too short")
-
         return None
 
     extracted_lower = extracted_text.lower()
@@ -172,7 +256,9 @@ def find_medicine(extracted_text, top_k=5):
                 'uses': row.get('Uses', 'N/A'),
                 'side_effects': row.get('Side_effects', 'N/A'),
                 'manufacturer': row.get('Manufacturer', 'N/A'),
-                'confidence': int(score)
+                'confidence': int(score),
+                'match_mode': 'direct',
+                'semantic_search_available': SEMANTIC_AVAILABLE
             }
 
     # Return if decent score
@@ -191,8 +277,46 @@ def find_medicine(extracted_text, top_k=5):
             'uses': row.get('Uses', 'N/A'),
             'side_effects': row.get('Side_effects', 'N/A'),
             'manufacturer': row.get('Manufacturer', 'N/A'),
-            'confidence': int(score)
+            'confidence': int(score),
+            'match_mode': 'direct',
+            'semantic_search_available': SEMANTIC_AVAILABLE
         }
+
+    # Fallback fuzzy matching for challenging packaging text
+    logger.info("Stage 1b: Fuzzy text similarity matching")
+    best_fuzzy_match = None
+    best_fuzzy_ratio = 0.0
+    extracted_norm = normalize_text(extracted_text)
+
+    for idx, (_, row) in enumerate(df.iterrows()):
+        combined_text = normalize_text(
+            f"{row.get('Medicine Name', '')} {row.get('Composition', '')} {row.get('Uses', '')}"
+        )
+        ratio = calculate_fuzzy_similarity(extracted_norm, combined_text)
+        if ratio > best_fuzzy_ratio:
+            best_fuzzy_ratio = ratio
+            best_fuzzy_match = (idx, row, ratio)
+
+    if best_fuzzy_match is not None and best_fuzzy_ratio >= 0.42:
+        idx, row, ratio = best_fuzzy_match
+        score = min(95, int(55 + best_fuzzy_ratio * 45))
+        logger.info(
+            f"Fuzzy match found: {row['Medicine Name']} (ratio={best_fuzzy_ratio:.2f}, score={score}%)"
+        )
+        return {
+            'medicine_name': row['Medicine Name'],
+            'composition': row['Composition'],
+            'uses': row.get('Uses', 'N/A'),
+            'side_effects': row.get('Side_effects', 'N/A'),
+            'manufacturer': row.get('Manufacturer', 'N/A'),
+            'confidence': int(score),
+            'match_mode': 'fuzzy',
+            'semantic_search_available': SEMANTIC_AVAILABLE
+        }
+
+    if faiss is None or model is None or index is None:
+        logger.info("Skipping FAISS stage because semantic search is unavailable.")
+        return None
 
     # -------------------------
     # STAGE 2: FAISS SEARCH
@@ -250,7 +374,9 @@ def find_medicine(extracted_text, top_k=5):
             'uses': row.get('Uses', 'N/A'),
             'side_effects': row.get('Side_effects', 'N/A'),
             'manufacturer': row.get('Manufacturer', 'N/A'),
-            'confidence': int(confidence)
+            'confidence': int(confidence),
+            'match_mode': 'semantic',
+            'semantic_search_available': SEMANTIC_AVAILABLE
         }
 
     except Exception as e:

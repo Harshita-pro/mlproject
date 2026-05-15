@@ -34,6 +34,8 @@ BRAND_MAP = {
     'flagyl': 'metronidazole',
     'cipro': 'ciprofloxacin',
     'amoxil': 'amoxicillin',
+    'avastin': 'bevacizumab',
+    'bevacizumab': 'bevacizumab',
 }
 
 # Common OCR errors and corrections
@@ -50,6 +52,8 @@ OCR_CORRECTIONS = {
     '250mq': '250mg',
     'mcq': 'mcg',
     'mg.': 'mg',
+    'avastln': 'avastin',
+    'bevaczimab': 'bevacizumab',
 }
 
 
@@ -126,52 +130,50 @@ def extract_text_from_image(image_path):
         return ""
 
     try:
+        candidates = []
 
-        # Preprocess image
+        # OCR on the original image
+        original_results = reader.readtext(image_path)
+        candidates.append(('original', original_results))
+
+        # OCR on the preprocessed image
         preprocessed = preprocess_image(image_path)
+        if preprocessed is not None:
+            processed_results = reader.readtext(preprocessed)
+            candidates.append(('preprocessed', processed_results))
 
-        if preprocessed is None:
-            results = reader.readtext(image_path)
+        best_text = ""
+        best_source = None
 
-        else:
-            temp_path = "temp_processed.jpg"
+        for source, results in candidates:
+            extracted = " ".join(
+                text for (_, text, confidence) in results if confidence >= 0.15
+            )
+            if len(extracted.strip()) > len(best_text):
+                best_text = extracted.strip()
+                best_source = source
 
-            cv2.imwrite(temp_path, preprocessed)
+        if not best_text:
+            for source, results in candidates:
+                extracted = " ".join(text for (_, text, _) in results)
+                if len(extracted.strip()) > len(best_text):
+                    best_text = extracted.strip()
+                    best_source = source
 
-            results = reader.readtext(temp_path)
+        logger.info(f"Raw OCR extracted ({best_source}): {best_text[:120]}")
 
-            Path(temp_path).unlink(missing_ok=True)
+        full_text = clean_text(best_text)
+        logger.info(f"Cleaned text: {full_text[:120]}")
 
-        # Extract text
-        text_parts = []
-
-        for (bbox, text, confidence) in results:
-
-            if confidence > 0.15:
-                text_parts.append(text)
-
-        full_text = " ".join(text_parts)
-
-        logger.info(f"Raw OCR extracted: {full_text[:100]}")
-
-        # Clean text
-        full_text = clean_text(full_text)
-
-        logger.info(f"Cleaned text: {full_text[:100]}")
-
-        # Brand mapping
         extra_compositions = []
-
         for brand, composition in BRAND_MAP.items():
-
             if brand in full_text:
                 extra_compositions.append(composition)
 
         if extra_compositions:
             full_text += " " + " ".join(extra_compositions)
 
-        logger.info(f"Final OCR text: {full_text[:100]}")
-
+        logger.info(f"Final OCR text: {full_text[:120]}")
         return full_text.strip()
 
     except Exception as e:

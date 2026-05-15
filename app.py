@@ -4,7 +4,7 @@ from werkzeug.utils import secure_filename
 from pathlib import Path
 import uuid
 from utils.ocr import extract_text_from_image
-from utils.matcher import find_medicine
+from utils.matcher import find_medicine, SEMANTIC_AVAILABLE
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -98,10 +98,17 @@ def predict():
         
         if not result:
             logger.info("No medicine match found")
+            message = 'Medicine not found in database.'
+            if not SEMANTIC_AVAILABLE:
+                message += (
+                    ' Semantic search is unavailable in this environment. '
+                    'Install faiss and sentence-transformers and run '
+                    'scripts/rag_ingest.py for better matching.'
+                )
             return jsonify({
                 'success': False,
                 'extracted_text': extracted_text,
-                'message': 'Medicine not found in database'
+                'message': message
             }), 404
 
         logger.info(f"Medicine found: {result['medicine_name']}")
