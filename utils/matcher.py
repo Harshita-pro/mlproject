@@ -314,6 +314,10 @@ def find_medicine(extracted_text, top_k=5):
             'semantic_search_available': SEMANTIC_AVAILABLE
         }
 
+    logger.info(
+        f"No direct/fuzzy match: best_direct_score={best_direct_score}, best_fuzzy_ratio={best_fuzzy_ratio:.2f}"
+    )
+
     if faiss is None or model is None or index is None:
         logger.info("Skipping FAISS stage because semantic search is unavailable.")
         return None

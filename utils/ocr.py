@@ -129,6 +129,11 @@ def extract_text_from_image(image_path):
         logger.error("EasyOCR reader not initialized")
         return ""
 
+    def _extract_text_from_results(results, min_confidence=0.15):
+        return " ".join(
+            text for (_, text, confidence) in results if confidence >= min_confidence
+        ).strip()
+
     try:
         candidates = []
 
@@ -139,25 +144,37 @@ def extract_text_from_image(image_path):
         # OCR on the preprocessed image
         preprocessed = preprocess_image(image_path)
         if preprocessed is not None:
-            processed_results = reader.readtext(preprocessed)
-            candidates.append(('preprocessed', processed_results))
+            candidates.append(('preprocessed', reader.readtext(preprocessed)))
+
+            adaptive_thresh = cv2.adaptiveThreshold(
+                preprocessed, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY, 15, 8
+            )
+            candidates.append(('adaptive_thresh', reader.readtext(adaptive_thresh)))
+
+            inverted = cv2.bitwise_not(adaptive_thresh)
+            candidates.append(('inverted_thresh', reader.readtext(inverted)))
+
+            resized = cv2.resize(
+                preprocessed, None, fx=1.5, fy=1.5,
+                interpolation=cv2.INTER_CUBIC
+            )
+            candidates.append(('resized', reader.readtext(resized)))
 
         best_text = ""
         best_source = None
 
         for source, results in candidates:
-            extracted = " ".join(
-                text for (_, text, confidence) in results if confidence >= 0.15
-            )
-            if len(extracted.strip()) > len(best_text):
-                best_text = extracted.strip()
+            extracted = _extract_text_from_results(results)
+            if len(extracted) > len(best_text):
+                best_text = extracted
                 best_source = source
 
         if not best_text:
             for source, results in candidates:
-                extracted = " ".join(text for (_, text, _) in results)
-                if len(extracted.strip()) > len(best_text):
-                    best_text = extracted.strip()
+                extracted = " ".join(text for (_, text, _) in results).strip()
+                if len(extracted) > len(best_text):
+                    best_text = extracted
                     best_source = source
 
         logger.info(f"Raw OCR extracted ({best_source}): {best_text[:120]}")
